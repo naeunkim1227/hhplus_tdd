@@ -5,6 +5,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
 
 @Service
 public class PointService {
@@ -12,7 +13,7 @@ public class PointService {
     private final PointRepository pointRepository;
     private final PointValidator pointValidator;
 
-    private final ConcurrentHashMap<Long, Object> userLock = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<Long, ReentrantLock> userLock = new ConcurrentHashMap<>();
 
     public PointService(PointRepository pointRepository , PointValidator pointValidator) {
         this.pointRepository = pointRepository;
@@ -39,9 +40,11 @@ public class PointService {
      * 포인트 충전
      */
     public UserPoint chargePoint(long id, long amount) {
-        Object lock = userLock.computeIfAbsent(id, k -> new Object());
+        ReentrantLock lock = userLock.computeIfAbsent(id, k -> new ReentrantLock());
 
-        synchronized (lock) {
+        lock.lock();
+
+        try {
             // 조회
             UserPoint userPoint = pointRepository.findById(id);
             List<PointHistory> history = pointRepository.findHistoryByUserId(id);
@@ -56,6 +59,8 @@ public class PointService {
             pointRepository.saveHistory(id, amount, TransactionType.CHARGE);
 
             return updatedPoint;
+        } finally {
+            lock.unlock();
         }
     }
 
@@ -63,9 +68,10 @@ public class PointService {
      * 포인트 사용
      */
     public UserPoint usePoint(long id, long amount) {
-        Object lock = userLock.computeIfAbsent(id, k -> new Object());
+        ReentrantLock lock = userLock.computeIfAbsent(id, k -> new ReentrantLock());
 
-        synchronized (lock) {
+        lock.lock();
+        try {
             // 조회
             UserPoint userPoint = pointRepository.findById(id);
 
@@ -79,6 +85,8 @@ public class PointService {
             pointRepository.saveHistory(id, amount, TransactionType.USE);
 
             return updatedPoint;
+        } finally {
+            lock.unlock();
         }
     }
 
