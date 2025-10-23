@@ -1,11 +1,13 @@
 package io.hhplus.tdd.point;
 
+import io.hhplus.tdd.point.validator.PointValidator;
 import io.hhplus.tdd.repository.PointRepository;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -26,6 +28,9 @@ class PointServiceTest {
 
     @Mock
     private PointRepository pointRepository;
+
+    @Spy
+    private PointValidator pointValidator = new PointValidator();
 
     @InjectMocks
     private PointService pointService;
@@ -73,8 +78,8 @@ class PointServiceTest {
         // given
         long userId = 1L;
         List<PointHistory> expectedHistory = List.of(
-            new PointHistory(1L, userId, 500L, TransactionType.CHARGE, System.currentTimeMillis()),
-            new PointHistory(2L, userId, 200L, TransactionType.USE, System.currentTimeMillis())
+                new PointHistory(1L, userId, 500L, TransactionType.CHARGE, System.currentTimeMillis()),
+                new PointHistory(2L, userId, 200L, TransactionType.USE, System.currentTimeMillis())
         );
 
         // when
@@ -191,7 +196,7 @@ class PointServiceTest {
         UserPoint updatedPoint = new UserPoint(userId, expectedAmount, System.currentTimeMillis());
 
         when(pointRepository.findById(userId)).thenReturn(currentPoint);
-        when(pointRepository.save(userId,expectedAmount)).thenReturn(updatedPoint);
+        when(pointRepository.save(userId, expectedAmount)).thenReturn(updatedPoint);
 
         // when
         UserPoint result = pointService.usePoint(userId, useAmount);
@@ -268,4 +273,36 @@ class PointServiceTest {
         verify(pointRepository, never()).save(anyLong(), anyLong());
     }
 
+
+    @Test
+    @DisplayName("최대 충전한도를 넘겨서 충전할 수 없다")
+    void chargePoint_ExceedMaxLimit() {
+        // given
+        long userId = 1L;
+        long currentAmount = 9_500_000L;
+        long chargeAmount = 600_000L;
+
+        UserPoint currentPoint = new UserPoint(userId, currentAmount, System.currentTimeMillis());
+
+        long weekAgo = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000L);
+        long yesterday = System.currentTimeMillis() - (24 * 60 * 60 * 1000L);
+
+        List<PointHistory> history = List.of(
+                new PointHistory(1L, userId, 3_500_000L, TransactionType.CHARGE, weekAgo),
+                new PointHistory(2L, userId, 3_500_000L, TransactionType.CHARGE, yesterday),
+                new PointHistory(3L, userId, 2_500_000L, TransactionType.CHARGE, yesterday)
+        );
+
+        when(pointRepository.findById(userId)).thenReturn(currentPoint);
+        when(pointRepository.findHistoryByUserId(userId)).thenReturn(history);
+
+        assertThatThrownBy(() -> pointService.chargePoint(userId, chargeAmount))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessage("최대 보유 한도(천만원)를 초과할 수 없습니다.");
+
+        verify(pointRepository, times(1)).findById(userId);
+        verify(pointRepository, times(1)).findHistoryByUserId(userId);
+        verify(pointRepository, never()).save(userId, chargeAmount);
+        verify(pointRepository, never()).saveHistory(anyLong(), anyLong(), eq(TransactionType.USE));
+    }
 }

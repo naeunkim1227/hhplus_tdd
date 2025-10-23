@@ -1,5 +1,5 @@
 package io.hhplus.tdd.point;
-
+import io.hhplus.tdd.point.validator.PointValidator;
 import io.hhplus.tdd.repository.PointRepository;
 import org.springframework.stereotype.Service;
 
@@ -9,9 +9,11 @@ import java.util.List;
 public class PointService {
 
     private final PointRepository pointRepository;
+    private final PointValidator pointValidator;
 
-    public PointService(PointRepository pointRepository) {
+    public PointService(PointRepository pointRepository , PointValidator pointValidator) {
         this.pointRepository = pointRepository;
+        this.pointValidator = pointValidator;
     }
 
     /**
@@ -36,11 +38,10 @@ public class PointService {
     public UserPoint chargePoint(long id, long amount) {
         // 조회
         UserPoint userPoint = pointRepository.findById(id);
+        List<PointHistory> history = pointRepository.findHistoryByUserId(id);
 
         // 검증
-        if (amount <= 0) {
-            throw new IllegalArgumentException("충전 금액은 0보다 커야 합니다.");
-        }
+        pointValidator.validateCharge(userPoint.point(), amount, history);
 
         // 업데이트
         UserPoint updatedPoint = pointRepository.save(id, userPoint.point() + amount);
@@ -59,13 +60,7 @@ public class PointService {
         UserPoint userPoint = pointRepository.findById(id);
 
         // 검증
-        if (amount <= 0) {
-            throw new IllegalArgumentException("사용 금액은 0보다 커야 합니다.");
-        }
-
-        if(amount > userPoint.point()) {
-            throw new IllegalArgumentException( "포인트가 부족합니다.");
-        }
+        pointValidator.validateUse(userPoint.point(), amount);
 
         // 업데이트
         UserPoint updatedPoint = pointRepository.save(id, userPoint.point() - amount);
@@ -75,4 +70,5 @@ public class PointService {
 
         return updatedPoint;
     }
+
 }
