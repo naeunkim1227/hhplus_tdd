@@ -4,12 +4,15 @@ import io.hhplus.tdd.repository.PointRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 public class PointService {
 
     private final PointRepository pointRepository;
     private final PointValidator pointValidator;
+
+    private final ConcurrentHashMap<Long, Object> userLock = new ConcurrentHashMap<>();
 
     public PointService(PointRepository pointRepository , PointValidator pointValidator) {
         this.pointRepository = pointRepository;
@@ -36,39 +39,47 @@ public class PointService {
      * 포인트 충전
      */
     public UserPoint chargePoint(long id, long amount) {
-        // 조회
-        UserPoint userPoint = pointRepository.findById(id);
-        List<PointHistory> history = pointRepository.findHistoryByUserId(id);
+        Object lock = userLock.computeIfAbsent(id, k -> new Object());
 
-        // 검증
-        pointValidator.validateCharge(userPoint.point(), amount, history);
+        synchronized (lock) {
+            // 조회
+            UserPoint userPoint = pointRepository.findById(id);
+            List<PointHistory> history = pointRepository.findHistoryByUserId(id);
 
-        // 업데이트
-        UserPoint updatedPoint = pointRepository.save(id, userPoint.point() + amount);
+            // 검증
+            pointValidator.validateCharge(userPoint.point(), amount, history);
 
-        // 히스토리 적재
-        pointRepository.saveHistory(id, amount, TransactionType.CHARGE);
+            // 업데이트
+            UserPoint updatedPoint = pointRepository.save(id, userPoint.point() + amount);
 
-        return updatedPoint;
+            // 히스토리 적재
+            pointRepository.saveHistory(id, amount, TransactionType.CHARGE);
+
+            return updatedPoint;
+        }
     }
 
     /**
      * 포인트 사용
      */
     public UserPoint usePoint(long id, long amount) {
-        // 조회
-        UserPoint userPoint = pointRepository.findById(id);
+        Object lock = userLock.computeIfAbsent(id, k -> new Object());
 
-        // 검증
-        pointValidator.validateUse(userPoint.point(), amount);
+        synchronized (lock) {
+            // 조회
+            UserPoint userPoint = pointRepository.findById(id);
 
-        // 업데이트
-        UserPoint updatedPoint = pointRepository.save(id, userPoint.point() - amount);
+            // 검증
+            pointValidator.validateUse(userPoint.point(), amount);
 
-        // 히스토리 적재
-        pointRepository.saveHistory(id, amount, TransactionType.USE);
+            // 업데이트
+            UserPoint updatedPoint = pointRepository.save(id, userPoint.point() - amount);
 
-        return updatedPoint;
+            // 히스토리 적재
+            pointRepository.saveHistory(id, amount, TransactionType.USE);
+
+            return updatedPoint;
+        }
     }
 
 }
